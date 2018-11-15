@@ -214,8 +214,16 @@ az resource create \
     --resource-group $RESOURCE_GROUP_NAME \
     --resource-type "Microsoft.Insights/components" \
     --location $LOCATION \
-    --properties '{"Application_Type":"web"}' \
+    --properties '{"Application_Type":"web","ApplicationId":"${FUNCTION_APP_NAME}","Request_Source":"IbizaWebAppExtensionCreate"}' \
     --output $OUTPUT_FORMAT
+
+# Add tag hidden-link, used by Azure portal for functionality like displaying application map
+app_insights_id="/subscriptions/1e42c44c-bc55-4b8a-b35e-de1dfbcfe495/resourceGroups/$RESOURCE_GROUP_NAME/providers/microsoft.insights/components/${FUNCTION_APP_NAME}"
+function_app_id="/subscriptions/1e42c44c-bc55-4b8a-b35e-de1dfbcfe495/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}"
+tag_key="hidden-link:${function_app_id}"
+tag_val="Resource"
+
+az resource tag --ids $app_insights_id --tags $tag_key=$tag_val
 
 # Retrieve the instrumentation key of application insights and store it in a variable
 INSTRUMENTATION_KEY=$(az resource show \
@@ -268,5 +276,3 @@ az keyvault set-policy \
     --output $OUTPUT_FORMAT
 
 echo "Done"
-echo "Press [ENTER] to continue."
-read continue
