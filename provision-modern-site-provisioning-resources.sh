@@ -28,6 +28,13 @@ FUNCTION_APP_NAME="${APP_NAME}-${BUILD}-fa-${LOCATION_SHORT}"
 # Keyvault name must be between 3 and 24 characters in length and use numbers and lower-case letters only
 KEY_VAULT_NAME="${APP_NAME_SHORT}${BUILD}kv${LOCATION_SHORT}"
 OUTPUT_FORMAT="json"
+# Retreive the ID of the default subscription and store in a variable
+SUBSCRIPTION_ID=$(az account show | jq -r ".id")
+
+# We want start each run with a clean slate, so start by removing
+# all the Azure resources that were created in the previous run
+# !!! Remove resource group and all it's content !!!
+az group delete --name $RESOURCE_GROUP_NAME
 
 # Provision the resources in Azure
 echo "Provision required resources in Azure for the 'Modern Site Provisioning' application."
@@ -36,7 +43,7 @@ echo "1. Create resource group $RESOURCE_GROUP_NAME"
 az group create \
     --name $RESOURCE_GROUP_NAME \
     --location $LOCATION \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 # Create the storage account
 echo "2. Create storage account $STORAGE_ACCOUNT_NAME"
@@ -46,11 +53,12 @@ az storage account create \
     --location $LOCATION \
     --sku Standard_GRS \
     --kind StorageV2 \
-	--output $OUTPUT_FORMAT \
+    --output $OUTPUT_FORMAT \
     --tags ${TAGS[*]}
 
 # Retrieve the connection string of the storage account and store it in a variable
-CONNECTION_STRING=$(az storage account show-connection-string --name $STORAGE_ACCOUNT_NAME \
+CONNECTION_STRING=$(az storage account \
+    show-connection-string --name $STORAGE_ACCOUNT_NAME \
     --resource-group $RESOURCE_GROUP_NAME | jq -r '.connectionString')
 
 # Create the storage table
@@ -58,20 +66,20 @@ echo "3. Create storage table $TABLE_NAME_SITES"
 az storage table create \
     --name $TABLE_NAME_SITES \
     --connection-string $CONNECTION_STRING \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 # Create the blob containers
 echo "4. Create blob container $CONTAINER_NAME_PROVISIONINGJOBFILES"
 az storage container create \
     --name $CONTAINER_NAME_PROVISIONINGJOBFILES \
     --connection-string $CONNECTION_STRING \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 echo "5. Create blob container $CONTAINER_NAME_PROVISIONINGTEMPLATEFILES"
 az storage container create \
     --name $CONTAINER_NAME_PROVISIONINGTEMPLATEFILES \
     --connection-string $CONNECTION_STRING \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 # Create the service bus
 echo "6. Create service bus $SERVICE_BUS_NAME"
@@ -80,7 +88,7 @@ az servicebus namespace create \
     --name $SERVICE_BUS_NAME \
     --location $LOCATION \
     --sku Standard \
-	--output $OUTPUT_FORMAT \
+    --output $OUTPUT_FORMAT \
     --tags ${TAGS[*]}
 
 # Create the topics with their subscriptions
@@ -98,7 +106,7 @@ az servicebus topic create\
     --enable-ordering false \
     --enable-partitioning true \
     --enable-express=false \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 echo "8. Create subscription $SUBSCRIPTION_NAME_NEWSITEREQUESTS"
 az servicebus topic subscription create \
@@ -113,7 +121,7 @@ az servicebus topic subscription create \
     --default-message-time-to-live P14D  \
     --lock-duration PT1M \
     --max-delivery-count 1 \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 echo "9. Create subscription $SUBSCRIPTION_NAME_UPDATESITEREQUESTS"
 az servicebus topic subscription create \
@@ -128,7 +136,7 @@ az servicebus topic subscription create \
     --default-message-time-to-live P14D  \
     --lock-duration PT1M \
     --max-delivery-count 1 \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 echo "10. Create topic $TOPIC_NAME_NEWSITES"
 az servicebus topic create\
@@ -144,7 +152,7 @@ az servicebus topic create\
     --enable-ordering false \
     --enable-partitioning true \
     --enable-express=false \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 echo "11. Create topic $TOPIC_NAME_UPDATESITES"
 az servicebus topic create\
@@ -160,7 +168,7 @@ az servicebus topic create\
     --enable-ordering false \
     --enable-partitioning true \
     --enable-express=false \
-	--output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT
 
 # Create the app service plan
 echo "11. Create app service plan $APP_SERVICE_PLAN_NAME"
@@ -169,7 +177,7 @@ az appservice plan create \
     --name $APP_SERVICE_PLAN_NAME \
     --number-of-workers 1 \
     --sku S1 \
-	--output $OUTPUT_FORMAT \
+    --output $OUTPUT_FORMAT \
     --tags ${TAGS[*]}
 
 # Create the function app
@@ -181,7 +189,7 @@ az functionapp create \
     --plan $APP_SERVICE_PLAN_NAME \
     --os-type Windows \
     --runtime dotnet \
-	--output $OUTPUT_FORMAT \
+    --output $OUTPUT_FORMAT \
     --tags ${TAGS[*]}
 
 # Configure the function app: remote debugging and app settings
@@ -218,12 +226,12 @@ az resource create \
     --output $OUTPUT_FORMAT
 
 # Add tag hidden-link, used by Azure portal for functionality like displaying application map
-app_insights_id="/subscriptions/1e42c44c-bc55-4b8a-b35e-de1dfbcfe495/resourceGroups/$RESOURCE_GROUP_NAME/providers/microsoft.insights/components/${FUNCTION_APP_NAME}"
-function_app_id="/subscriptions/1e42c44c-bc55-4b8a-b35e-de1dfbcfe495/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}"
-tag_key="hidden-link:${function_app_id}"
-tag_val="Resource"
+APP_INSIGHTS_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/$RESOURCE_GROUP_NAME/providers/microsoft.insights/components/${FUNCTION_APP_NAME}"
+FUNCTION_APP_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/$RESOURCE_GROUP_NAME/providers/Microsoft.Web/sites/${FUNCTION_APP_NAME}"
+TAG_KEY="hidden-link:${FUNCTION_APP_ID}"
+TAG_VAL="Resource"
 
-az resource tag --ids $app_insights_id --tags $tag_key=$tag_val
+az resource tag --ids $APP_INSIGHTS_ID --tags $TAG_KEY=$TAG_VAL
 
 # Retrieve the instrumentation key of application insights and store it in a variable
 INSTRUMENTATION_KEY=$(az resource show \
@@ -264,7 +272,9 @@ az functionapp identity assign \
     --output $OUTPUT_FORMAT
 
 # Retrieve the principal id of the managed identity and store it in a variable
-PRINCIPAL_ID=$(az functionapp identity show --name $FUNCTION_APP_NAME --resource-group $RESOURCE_GROUP_NAME | jq -r ".principalId")
+PRINCIPAL_ID=$(az functionapp identity show \
+    --name $FUNCTION_APP_NAME \
+    --resource-group $RESOURCE_GROUP_NAME | jq -r ".principalId")
 
 # Grant the function app get secret permissions on the key vault
 echo "17. Grant $FUNCTION_APP_NAME get secret permissions for key vault $KEY_VAULT_NAME"
