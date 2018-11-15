@@ -34,7 +34,7 @@ SUBSCRIPTION_ID=$(az account show | jq -r ".id")
 # We want start each run with a clean slate, so start by removing
 # all the Azure resources that were created in the previous run
 # !!! Remove resource group and all it's content !!!
-az group delete --name $RESOURCE_GROUP_NAME
+az group delete --name $RESOURCE_GROUP_NAME --yes
 
 # Provision the resources in Azure
 echo "Provision required resources in Azure for the 'Modern Site Provisioning' application."
