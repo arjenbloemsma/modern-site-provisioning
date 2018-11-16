@@ -23,14 +23,30 @@ TOPIC_NAME_NEWSITES="new-sites-topic"
 TOPIC_NAME_UPDATESITES="update-sites-topic"
 SUBSCRIPTION_NAME_NEWSITEREQUESTS="new-site-requests-subscription"
 SUBSCRIPTION_NAME_UPDATESITEREQUESTS="update-site-requests-subscription"
+SUBSCRIPTION_NAME_CREATESITE="create-site-subscription"
+SUBSCRIPTION_NAME_REGISTERSITE="register-site-subscription"
+SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES="set-default-column-values-subscription"
+SUBSCRIPTION_NAME_UPDATEMETADATA="update-metadata-subscription"
+SUBSCRIPTION_NAME_UPDATETEMPLATE="update-template-subscription"
+SUBSCRIPTION_NAME_APPLYTEMPLATE="apply-template-subscription"
+RULE_NAME_DEFAULT="\$Default"
+RULE_NAME_NEWSITE="new-site"
+RULE_NAME_UPDATESITE="update-site"
+RULE_NAME_CREATESITE="create-site"
+RULE_NAME_REGISTERSITE="register-site"
+RULE_NAME_SETDEFAULTCOLUMNVALUES="set-default-column-values"
+RULE_NAME_UPDATESITEMETADATA="update-site-metadata"
+RULE_NAME_UPDATESITETEMPLATE="update-site-template"
+RULE_NAME_APPLYSITETEMPLATE="apply-site-template"
 APP_SERVICE_PLAN_NAME="${APP_NAME}-${BUILD}-asp-${LOCATION_SHORT}"
 FUNCTION_APP_NAME="${APP_NAME}-${BUILD}-fa-${LOCATION_SHORT}"
 # Keyvault name must be between 3 and 24 characters in length and use numbers and lower-case letters only
 KEY_VAULT_NAME="${APP_NAME_SHORT}${BUILD}kv${LOCATION_SHORT}"
 OUTPUT_FORMAT="json"
 # Retreive the ID of the default subscription and store in a variable
-SUBSCRIPTION_ID=$(az account show | jq -r ".id")
-
+SUBSCRIPTION_ID=$(az account show | jq --raw-output ".id")
+# Counter for echoing the steps number
+STEP=0
 # We want start each run with a clean slate, so start by removing
 # all the Azure resources that were created in the previous run
 # !!! Remove resource group and all it's content !!!
@@ -39,14 +55,14 @@ az group delete --name $RESOURCE_GROUP_NAME --yes
 # Provision the resources in Azure
 echo "Provision required resources in Azure for the 'Modern Site Provisioning' application."
 # Create the resource group.
-echo "1. Create resource group $RESOURCE_GROUP_NAME"
+echo "$((STEP++)). Create resource group $RESOURCE_GROUP_NAME"
 az group create \
     --name $RESOURCE_GROUP_NAME \
     --location $LOCATION \
     --output $OUTPUT_FORMAT
 
 # Create the storage account
-echo "2. Create storage account $STORAGE_ACCOUNT_NAME"
+echo "$((STEP++)). Create storage account $STORAGE_ACCOUNT_NAME"
 az storage account create \
     --resource-group $RESOURCE_GROUP_NAME \
     --name $STORAGE_ACCOUNT_NAME \
@@ -58,31 +74,32 @@ az storage account create \
 
 # Retrieve the connection string of the storage account and store it in a variable
 CONNECTION_STRING=$(az storage account \
-    show-connection-string --name $STORAGE_ACCOUNT_NAME \
-    --resource-group $RESOURCE_GROUP_NAME | jq -r '.connectionString')
+    show-connection-string \
+    --name $STORAGE_ACCOUNT_NAME \
+    --resource-group $RESOURCE_GROUP_NAME | jq --raw-output ".connectionString")
 
 # Create the storage table
-echo "3. Create storage table $TABLE_NAME_SITES"
+echo "$((STEP++)). Create storage table $TABLE_NAME_SITES"
 az storage table create \
     --name $TABLE_NAME_SITES \
     --connection-string $CONNECTION_STRING \
     --output $OUTPUT_FORMAT
 
 # Create the blob containers
-echo "4. Create blob container $CONTAINER_NAME_PROVISIONINGJOBFILES"
+echo "$((STEP++)). Create blob container $CONTAINER_NAME_PROVISIONINGJOBFILES"
 az storage container create \
     --name $CONTAINER_NAME_PROVISIONINGJOBFILES \
     --connection-string $CONNECTION_STRING \
     --output $OUTPUT_FORMAT
 
-echo "5. Create blob container $CONTAINER_NAME_PROVISIONINGTEMPLATEFILES"
+echo "$((STEP++)). Create blob container $CONTAINER_NAME_PROVISIONINGTEMPLATEFILES"
 az storage container create \
     --name $CONTAINER_NAME_PROVISIONINGTEMPLATEFILES \
     --connection-string $CONNECTION_STRING \
     --output $OUTPUT_FORMAT
 
 # Create the service bus
-echo "6. Create service bus $SERVICE_BUS_NAME"
+echo "$((STEP++)). Create service bus $SERVICE_BUS_NAME"
 az servicebus namespace create \
     --resource-group $RESOURCE_GROUP_NAME \
     --name $SERVICE_BUS_NAME \
@@ -92,7 +109,7 @@ az servicebus namespace create \
     --tags ${TAGS[*]}
 
 # Create the topics with their subscriptions
-echo "7. Create topic $TOPIC_NAME_SITEOPERATIONS"
+echo "$((STEP++)). Create topic $TOPIC_NAME_SITEOPERATIONS"
 az servicebus topic create\
     --resource-group $RESOURCE_GROUP_NAME \
     --namespace-name $SERVICE_BUS_NAME \
@@ -108,7 +125,7 @@ az servicebus topic create\
     --enable-express=false \
     --output $OUTPUT_FORMAT
 
-echo "8. Create subscription $SUBSCRIPTION_NAME_NEWSITEREQUESTS"
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_NEWSITEREQUESTS for topic $TOPIC_NAME_SITEOPERATIONS"
 az servicebus topic subscription create \
     --resource-group $RESOURCE_GROUP_NAME \
     --namespace-name $SERVICE_BUS_NAME \
@@ -123,7 +140,24 @@ az servicebus topic subscription create \
     --max-delivery-count 1 \
     --output $OUTPUT_FORMAT
 
-echo "9. Create subscription $SUBSCRIPTION_NAME_UPDATESITEREQUESTS"
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_SITEOPERATIONS \
+    --subscription-name $SUBSCRIPTION_NAME_NEWSITEREQUESTS \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_NEWSITE for subscription $SUBSCRIPTION_NAME_NEWSITEREQUESTS"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_SITEOPERATIONS \
+    --subscription-name $SUBSCRIPTION_NAME_NEWSITEREQUESTS \
+    --name $RULE_NAME_NEWSITE \
+    --filter-sql-expression sys.Label=SiteProvisioning
+
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_UPDATESITEREQUESTS for topic $TOPIC_NAME_SITEOPERATIONS"
 az servicebus topic subscription create \
     --resource-group $RESOURCE_GROUP_NAME \
     --namespace-name $SERVICE_BUS_NAME \
@@ -138,7 +172,24 @@ az servicebus topic subscription create \
     --max-delivery-count 1 \
     --output $OUTPUT_FORMAT
 
-echo "10. Create topic $TOPIC_NAME_NEWSITES"
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_SITEOPERATIONS \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATESITEREQUESTS \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_UPDATESITE for subscription $SUBSCRIPTION_NAME_UPDATESITEREQUESTS"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_SITEOPERATIONS \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATESITEREQUESTS \
+    --name $RULE_NAME_UPDATESITE \
+    --filter-sql-expression "sys.Label=UpdateSiteMetadata OR sys.Label=UpdateSiteTemplate"
+
+echo "$((STEP++)). Create topic $TOPIC_NAME_NEWSITES"
 az servicebus topic create\
     --resource-group $RESOURCE_GROUP_NAME \
     --namespace-name $SERVICE_BUS_NAME \
@@ -154,7 +205,103 @@ az servicebus topic create\
     --enable-express=false \
     --output $OUTPUT_FORMAT
 
-echo "11. Create topic $TOPIC_NAME_UPDATESITES"
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_CREATESITE for topic $TOPIC_NAME_NEWSITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --name $SUBSCRIPTION_NAME_CREATESITE \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_CREATESITE \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_CREATESITE for subscription $SUBSCRIPTION_NAME_CREATESITE"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_CREATESITE \
+    --name $RULE_NAME_CREATESITE \
+    --filter-sql-expression sys.Label=CreateSiteCollection
+
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_REGISTERSITE for topic $TOPIC_NAME_NEWSITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --name $SUBSCRIPTION_NAME_REGISTERSITE \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_REGISTERSITE \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_REGISTERSITE for subscription $SUBSCRIPTION_NAME_REGISTERSITE"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_REGISTERSITE \
+    --name $RULE_NAME_REGISTERSITE \
+    --filter-sql-expression sys.Label=CreateSiteCollection
+
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES for topic $TOPIC_NAME_NEWSITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --name $SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_SETDEFAULTCOLUMNVALUES for subscription $SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_NEWSITES \
+    --subscription-name $SUBSCRIPTION_NAME_SETDEFAULTCOLUMNVALUES \
+    --name $RULE_NAME_SETDEFAULTCOLUMNVALUES \
+    --filter-sql-expression sys.Label=SetDefaultColumnValues
+
+echo "$((STEP++)). Create topic $TOPIC_NAME_UPDATESITES"
 az servicebus topic create\
     --resource-group $RESOURCE_GROUP_NAME \
     --namespace-name $SERVICE_BUS_NAME \
@@ -170,8 +317,104 @@ az servicebus topic create\
     --enable-express=false \
     --output $OUTPUT_FORMAT
 
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_UPDATEMETADATA for topic $TOPIC_NAME_UPDATESITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --name $SUBSCRIPTION_NAME_UPDATEMETADATA \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATEMETADATA \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_UPDATESITEMETADATA for subscription $SUBSCRIPTION_NAME_UPDATEMETADATA"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATEMETADATA \
+    --name $RULE_NAME_UPDATESITEMETADATA \
+    --filter-sql-expression sys.Label=UpdateSiteMetadata
+
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_UPDATETEMPLATE for topic $TOPIC_NAME_UPDATESITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --name $SUBSCRIPTION_NAME_UPDATETEMPLATE \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATETEMPLATE \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_UPDATESITETEMPLATE for subscription $SUBSCRIPTION_NAME_UPDATETEMPLATE"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_UPDATETEMPLATE \
+    --name $RULE_NAME_UPDATESITETEMPLATE \
+    --filter-sql-expression sys.Label=UpdateSiteTemplate
+
+echo "$((STEP++)). Create subscription $SUBSCRIPTION_NAME_APPLYTEMPLATE for topic $TOPIC_NAME_UPDATESITES"
+az servicebus topic subscription create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --name $SUBSCRIPTION_NAME_APPLYTEMPLATE \
+    --status Active \
+    --enable-dead-lettering-on-message-expiration true \
+    --enable-batched-operations false \
+    --dead-letter-on-filter-exceptions false \
+    --default-message-time-to-live P14D  \
+    --lock-duration PT1M \
+    --max-delivery-count 10 \
+    --output $OUTPUT_FORMAT
+
+# Remove the default rule that comes with the subscription
+az servicebus topic subscription rule delete \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_APPLYTEMPLATE \
+    --name $RULE_NAME_DEFAULT
+
+echo "$((STEP++)). Create rule $RULE_NAME_APPLYSITETEMPLATE for subscription $SUBSCRIPTION_NAME_APPLYTEMPLATE"
+az servicebus topic subscription rule create \
+    --resource-group $RESOURCE_GROUP_NAME \
+    --namespace-name $SERVICE_BUS_NAME \
+    --topic-name $TOPIC_NAME_UPDATESITES \
+    --subscription-name $SUBSCRIPTION_NAME_APPLYTEMPLATE \
+    --name $RULE_NAME_APPLYSITETEMPLATE \
+    --filter-sql-expression sys.Label=ApplyTemplate
+
 # Create the app service plan
-echo "11. Create app service plan $APP_SERVICE_PLAN_NAME"
+echo "$((STEP++)). Create app service plan $APP_SERVICE_PLAN_NAME"
 az appservice plan create \
     --resource-group $RESOURCE_GROUP_NAME \
     --name $APP_SERVICE_PLAN_NAME \
@@ -181,7 +424,7 @@ az appservice plan create \
     --tags ${TAGS[*]}
 
 # Create the function app
-echo "12. Create function app $FUNCTION_APP_NAME"
+echo "$((STEP++)). Create function app $FUNCTION_APP_NAME"
 az functionapp create \
     --resource-group $RESOURCE_GROUP_NAME \
     --name $FUNCTION_APP_NAME \
@@ -193,7 +436,7 @@ az functionapp create \
     --tags ${TAGS[*]}
 
 # Configure the function app: remote debugging and app settings
-echo "13. Configure function app $FUNCTION_APP_NAME"
+echo "$((STEP++)). Configure function app $FUNCTION_APP_NAME"
 if [ $BUILD = "dev" ]
 then
     az functionapp config set \
@@ -216,7 +459,7 @@ az functionapp config appsettings set \
     --output $OUTPUT_FORMAT
 
 # Create the application insights
-echo "14. Create application insights for function app $FUNCTION_APP_NAME"   
+echo "$((STEP++)). Create application insights for function app $FUNCTION_APP_NAME"   
 az resource create \
     --name ${FUNCTION_APP_NAME} \
     --resource-group $RESOURCE_GROUP_NAME \
@@ -237,7 +480,7 @@ az resource tag --ids $APP_INSIGHTS_ID --tags $TAG_KEY=$TAG_VAL
 INSTRUMENTATION_KEY=$(az resource show \
     --name ${FUNCTION_APP_NAME} \
     --resource-group $RESOURCE_GROUP_NAME \
-    --resource-type "Microsoft.Insights/components" | jq -r ".properties.InstrumentationKey")
+    --resource-type "Microsoft.Insights/components" | jq --raw-output ".properties.InstrumentationKey")
 
 # Connect the function app to application insights via the instrumentation key
 az functionapp config appsettings set \
@@ -247,7 +490,7 @@ az functionapp config appsettings set \
 --output $OUTPUT_FORMAT
 
 # Create the key vault
-echo "15. Create key vault $KEY_VAULT_NAME"
+echo "$((STEP++)). Create key vault $KEY_VAULT_NAME"
 az keyvault create \
     --resource-group $RESOURCE_GROUP_NAME \
     --name $KEY_VAULT_NAME \
@@ -265,7 +508,7 @@ az keyvault create \
     --tags ${TAGS[*]}
 
 # Create a managed identityu for the function app
-echo "16. Configure managed identity for function app $FUNCTION_APP_NAME"
+echo "$((STEP++)). Configure managed identity for function app $FUNCTION_APP_NAME"
 az functionapp identity assign \
     --name $FUNCTION_APP_NAME \
     --resource-group $RESOURCE_GROUP_NAME \
@@ -274,10 +517,10 @@ az functionapp identity assign \
 # Retrieve the principal id of the managed identity and store it in a variable
 PRINCIPAL_ID=$(az functionapp identity show \
     --name $FUNCTION_APP_NAME \
-    --resource-group $RESOURCE_GROUP_NAME | jq -r ".principalId")
+    --resource-group $RESOURCE_GROUP_NAME | jq --raw-output ".principalId")
 
 # Grant the function app get secret permissions on the key vault
-echo "17. Grant $FUNCTION_APP_NAME get secret permissions for key vault $KEY_VAULT_NAME"
+echo "$((STEP++)). Grant $FUNCTION_APP_NAME get secret permissions for key vault $KEY_VAULT_NAME"
 az keyvault set-policy \
     --name $KEY_VAULT_NAME \
     --resource-group $RESOURCE_GROUP_NAME \
