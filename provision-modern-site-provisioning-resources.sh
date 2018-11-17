@@ -10,7 +10,8 @@ APP_NAME_SHORT="modsiteprov" # some resources require a short name
 BUILD="dev"
 LOCATION="westeurope"
 LOCATION_SHORT="we"
-TAGS=(owner="Arjen Bloemsma" application=${APP_NAME})
+# The following notation is required to allow spaces in the values of the tags
+TAGS=("owner=Arjen Bloemsma" "application=${APP_NAME}")
 RESOURCE_GROUP_NAME="${APP_NAME}-${BUILD}-rg"
 # Storage account name must be between 3 and 24 characters in length and use numbers and lower-case letters only
 STORAGE_ACCOUNT_NAME="${APP_NAME_SHORT}${BUILD}sa${LOCATION_SHORT}"
@@ -44,7 +45,7 @@ FUNCTION_APP_NAME="${APP_NAME}-${BUILD}-fa-${LOCATION_SHORT}"
 KEY_VAULT_NAME="${APP_NAME_SHORT}${BUILD}kv${LOCATION_SHORT}"
 OUTPUT_FORMAT="json"
 # Retreive the ID of the default subscription and store in a variable
-SUBSCRIPTION_ID=$(az account show | jq --raw-output ".id")
+SUBSCRIPTION_ID=$(az account show --query "id")
 # Counter for echoing the steps number
 STEP=0
 # We want start each run with a clean slate, so start by removing
@@ -59,7 +60,8 @@ echo "$((STEP++)). Create resource group $RESOURCE_GROUP_NAME"
 az group create \
     --name $RESOURCE_GROUP_NAME \
     --location $LOCATION \
-    --output $OUTPUT_FORMAT
+    --output $OUTPUT_FORMAT \
+    --tags "${TAGS[@]}"
 
 # Create the storage account
 echo "$((STEP++)). Create storage account $STORAGE_ACCOUNT_NAME"
@@ -70,13 +72,13 @@ az storage account create \
     --sku Standard_GRS \
     --kind StorageV2 \
     --output $OUTPUT_FORMAT \
-    --tags ${TAGS[*]}
+    --tags "${TAGS[@]}"
 
 # Retrieve the connection string of the storage account and store it in a variable
-CONNECTION_STRING=$(az storage account \
-    show-connection-string \
+CONNECTION_STRING=$(az storage account show-connection-string \
     --name $STORAGE_ACCOUNT_NAME \
-    --resource-group $RESOURCE_GROUP_NAME | jq --raw-output ".connectionString")
+    --resource-group $RESOURCE_GROUP_NAME \
+    --query "connectionString")
 
 # Create the storage table
 echo "$((STEP++)). Create storage table $TABLE_NAME_SITES"
@@ -106,7 +108,7 @@ az servicebus namespace create \
     --location $LOCATION \
     --sku Standard \
     --output $OUTPUT_FORMAT \
-    --tags ${TAGS[*]}
+    --tags "${TAGS[@]}"
 
 # Create the topics with their subscriptions
 echo "$((STEP++)). Create topic $TOPIC_NAME_SITEOPERATIONS"
@@ -421,7 +423,7 @@ az appservice plan create \
     --number-of-workers 1 \
     --sku S1 \
     --output $OUTPUT_FORMAT \
-    --tags ${TAGS[*]}
+    --tags "${TAGS[@]}"
 
 # Create the function app
 echo "$((STEP++)). Create function app $FUNCTION_APP_NAME"
@@ -433,7 +435,7 @@ az functionapp create \
     --os-type Windows \
     --runtime dotnet \
     --output $OUTPUT_FORMAT \
-    --tags ${TAGS[*]}
+    --tags "${TAGS[@]}"
 
 # Configure the function app: remote debugging and app settings
 echo "$((STEP++)). Configure function app $FUNCTION_APP_NAME"
@@ -474,7 +476,7 @@ FUNCTION_APP_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/$RESOURCE_GROU
 TAG_KEY="hidden-link:${FUNCTION_APP_ID}"
 TAG_VAL="Resource"
 
-az resource tag --ids $APP_INSIGHTS_ID --tags $TAG_KEY=$TAG_VAL
+az resource tag --ids $APP_INSIGHTS_ID --tags $TAG_KEY=$TAG_VAL "${TAGS[@]}"
 
 # Retrieve the instrumentation key of application insights and store it in a variable
 INSTRUMENTATION_KEY=$(az resource show \
@@ -497,17 +499,15 @@ az keyvault create \
     --location $LOCATION \
     --bypass AzureServices \
     --default-action Deny \
-    # --enable-purge-protection false \
-    # --enable-soft-delete false \
     --enabled-for-deployment false \
     --enabled-for-disk-encryption false \
     --enabled-for-template-deployment true \
     --no-self-perms true \
     --sku premium \
     --output $OUTPUT_FORMAT \
-    --tags ${TAGS[*]}
+    --tags "${TAGS[@]}"
 
-# Create a managed identityu for the function app
+# Create a managed identityy for the function app
 echo "$((STEP++)). Configure managed identity for function app $FUNCTION_APP_NAME"
 az functionapp identity assign \
     --name $FUNCTION_APP_NAME \
