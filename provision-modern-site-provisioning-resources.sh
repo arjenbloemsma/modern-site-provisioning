@@ -5,11 +5,12 @@
 # --> https://stedolan.github.io/jq
 
 # Declare variables
-APP_NAME="modern-site-provisioning"
-APP_NAME_SHORT="modsiteprov" # some resources require a short name
+# The values for some of the variables, like APP_NAME, are defined in Azure DevOps
+APP_NAME=${APPLICATION-NAME}
+APP_NAME_SHORT=${APPLICATION-NAME-SHORT} # some resources require a short name
 BUILD="dev"
-LOCATION="westeurope"
-LOCATION_SHORT="we"
+LOCATION=${LOCATION}
+LOCATION_SHORT=${LOCATION-SHORT}
 # The following notation is required to allow spaces in the values of the tags
 TAGS=("owner=Arjen Bloemsma" "application=${APP_NAME}")
 RESOURCE_GROUP_NAME="${APP_NAME}-${BUILD}-rg"
@@ -48,10 +49,6 @@ OUTPUT_FORMAT="json"
 SUBSCRIPTION_ID=$(az account show --query "id")
 # Counter for echoing the steps number
 STEP=0
-# We want start each run with a clean slate, so start by removing
-# all the Azure resources that were created in the previous run
-# !!! Remove resource group and all it's content !!!
-az group delete --name $RESOURCE_GROUP_NAME --yes
 
 # Provision the resources in Azure
 echo "Provision required resources in Azure for the 'Modern Site Provisioning' application."
