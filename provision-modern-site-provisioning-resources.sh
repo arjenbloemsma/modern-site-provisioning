@@ -6,11 +6,12 @@
 
 # Declare variables
 # The values for some of the variables, like APP_NAME, are defined in Azure DevOps
-APP_NAME=${APPLICATION-NAME}
-APP_NAME_SHORT=${APPLICATION-NAME-SHORT} # some resources require a short name
-BUILD="dev"
+APP_NAME=${APPLICATION_NAME}
+APP_NAME_SHORT=${APPLICATION_NAME_SHORT} # some resources require a short name
+# Transform the environment name to lower case
+BUILD=$(echo $RELEASE_ENVIRONMENTNAME | tr '[:upper:]' '[:lower:]')
 LOCATION=${LOCATION}
-LOCATION_SHORT=${LOCATION-SHORT}
+LOCATION_SHORT=${LOCATION_SHORT}
 # The following notation is required to allow spaces in the values of the tags
 TAGS=("owner=Arjen Bloemsma" "application=${APP_NAME}")
 RESOURCE_GROUP_NAME="${APP_NAME}-${BUILD}-rg"
