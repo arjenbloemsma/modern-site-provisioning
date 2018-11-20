@@ -483,10 +483,11 @@ INSTRUMENTATION_KEY=$(az resource show \
     --resource-type "Microsoft.Insights/components" | jq --raw-output ".properties.InstrumentationKey")
 
 # Connect the function app to application insights via the instrumentation key
+# and set the correct Azure Functions runtime (https://docs.microsoft.com/nl-nl/azure/azure-functions/functions-versions)
 az functionapp config appsettings set \
 --name $FUNCTION_APP_NAME \
 --resource-group $RESOURCE_GROUP_NAME \
---settings APPINSIGHTS_INSTRUMENTATIONKEY=$INSTRUMENTATION_KEY \
+--settings APPINSIGHTS_INSTRUMENTATIONKEY=$INSTRUMENTATION_KEY FUNCTIONS_EXTENSION_VERSION="~1" \
 --output $OUTPUT_FORMAT
 
 # Create the key vault
